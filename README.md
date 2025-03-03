@@ -2,35 +2,120 @@
 
 ## Description
 
-GocaGola est un module Golang qui simplifie le développement d'API. Il fournit des fonctionnalités prêtes à l'emploi comme :
+GocaGola est un framework léger pour créer des API GO avec un système de plugins dynamiques. Il permet de :
 
-- Lecture automatique des fichiers 
-- Système d'authentification intégré
-- Fonction de test ping/pong
-
-GocaGola is a Golang module that simplifies API development. It provides ready-to-use features such as:
-
-- Automatic file reading
-- Built-in authentication system 
-- Ping/pong testing function
+- Charger dynamiquement des handlers HTTP depuis des plugins Go
+- Recharger automatiquement les plugins modifiés
+- Simplifier la création d'API REST
 
 ## Installation
 
-```go
-go get github.com/gocagolang/GocaGola
+```bash
+git clone https://github.com/YourUsername/YourProject.git
+cd YourProject
+go mod init gocagola
+go get github.com/gocagolang/GocaGola/routing
 ```
 
-## Usage
+## Utilisation
+
+### Point d'accès simple
 
 ```go
-import "github.com/gocagolang/GocaGola"
+// filepath: /api/users/main.go
+package main
 
-response := GocaGola.Ping()
+import "github.com/gin-gonic/gin"
+
+func GET(c *gin.Context) {
+    c.JSON(200, gin.H{
+        "message": "Liste des utilisateurs",
+    })
+}
 ```
 
-## Features
+### Points d'accès avec paramètres
 
-...
+```go
+// filepath: /api/users/:id/main.go
+package main
 
-## Contributing
-Pull requests are welcome. For major changes, please open an issue first to discuss what you would like to change.
+import "github.com/gin-gonic/gin"
+
+func GET(c *gin.Context) {
+    id := c.Param("id")
+    c.JSON(200, gin.H{
+        "message": "Détails de l'utilisateur",
+        "id": id,
+    })
+}
+
+func DELETE(c *gin.Context) {
+    id := c.Param("id")
+    c.JSON(200, gin.H{
+        "message": "Utilisateur supprimé",
+        "id": id,
+    })
+}
+```
+
+Exemple de réponse pour `GET /api/users/123` :
+```json
+{
+    "message": "Détails de l'utilisateur",
+    "id": "123"
+}
+```
+
+Exemple de réponse pour `DELETE /api/users/123` :
+```json
+{
+    "message": "Utilisateur supprimé",
+    "id": "123"
+}
+```
+
+### Démarrage du serveur
+
+```go
+// filepath: /main.go
+package main
+
+import "github.com/gocagolang/GocaGola/routing"
+
+func main() {
+    routing.Initialize("api")
+}
+```
+
+Lancer le serveur :
+```bash
+go run main.go
+```
+
+## Fonctionnalités
+
+- **Système de Plugins Dynamique** : Ajoutez de nouveaux points d'accès sans redémarrer le serveur
+- **Rechargement à Chaud** : Recompilation et rechargement automatique des plugins modifiés
+- **Convention plutôt que Configuration** : Structure de dossiers simple pour les points d'accès API
+- **Basé sur Gin** : Framework HTTP haute performance
+- **Facile à Développer** : Messages d'erreur clairs et journalisation détaillée
+
+## Structure du Projet
+
+```
+/YourProject
+├── api/
+│   ├── ping/
+│   │   └── main.go
+│   └── users/
+│       ├── main.go
+│       └── :id/
+│           └── main.go
+└── main.go
+```
+
+## Contribuer
+
+Les pull requests sont les bienvenues. Pour les changements majeurs, veuillez d'abord ouvrir une issue pour discuter des modifications souhaitées.
+
