@@ -13,23 +13,33 @@ import (
 )
 
 const (
-    DefaultAPIFolder = "api"
-    PluginExtension = ".so"
-    CompiledFolder  = ".GocaGola"
+    DefaultAPIFolder       = "api"
+    DefaultMiddlewareFolder = "middlewares"
+    PluginExtension        = ".so"
+    CompiledFolder         = ".GocaGola"
 )
 
 var pluginCache = make(map[string]time.Time)
 
-var supportedMethods = []string{"GET", "PUT", "POST", "PATCH", "DELETE"}
+var supportedMethods = []string{"GET", "PUT", "POST", "PATCH", "DELETE"
 
-func Initialize(apiFolder string) {
+// MiddlewareResolver est une fonction que l'utilisateur peut définir pour associer des middlewares à des routes.
+var MiddlewareResolver func(routePath string) []gin.HandlerFunc
+
+func Initialize(apiFolder string, middlewareFolder string) {
     basePath, err := getBasePath(apiFolder)
     if err != nil {
         log.Fatal("Initialization failed:", err)
         return
     }
 
-    router := setupRouter()
+    middlewares, err := loadMiddlewares(middlewareFolder)
+    if err != nil {
+        log.Fatal("Failed to load middlewares:", err)
+        return
+    }
+
+    router := setupRouter(middlewares...)
     if err = loadAPIHandlers(router, basePath); err != nil {
         log.Fatal("Error loading handlers:", err)
         return
@@ -63,9 +73,14 @@ func getBasePath(apiFolder string) (string, error) {
     return apiFolder, nil
 }
 
-func setupRouter() *gin.Engine {
+func setupRouter(middlewares ...gin.HandlerFunc) *gin.Engine {
     r := gin.Default()
     r.SetTrustedProxies([]string{"127.0.0.1"})
+
+    for _, middleware := range middlewares {
+        r.Use(middleware)
+    }
+
     return r
 }
 
@@ -196,7 +211,18 @@ func handleGoFile(r *gin.Engine, basePath, filePath string) error {
     }
 
     routePath := buildRoutePath(basePath, filePath)
-    return registerHandlers(r, routePath, routeHandler)
+
+    specificMiddlewares := getMiddlewaresForRoute(routePath)
+
+    return registerHandlers(r, routePath, routeHandler, specificMiddlewares...)
+}
+
+func getMiddlewaresForRoute(routePath string) []gin.HandlerFunc {
+    if MiddlewareResolver != nil {
+        return MiddlewareResolver(routePath)
+    }
+
+    return []gin.HandlerFunc{}
 }
 
 func buildRoutePath(basePath, filePath string) string {
@@ -210,12 +236,53 @@ func buildRoutePath(basePath, filePath string) string {
     return filepath.Join("/api", relPath)
 }
 
-func registerHandlers(r *gin.Engine, routePath string, handlers map[string]interface{}) error {
+func registerHandlers(r *gin.Engine, routePath string, handlers map[string]interface{}, middlewares ...gin.HandlerFunc) error {
     for protocol, handlerFunc := range handlers {
         if handler, ok := handlerFunc.(func(*gin.Context)); ok {
-            log.Printf("Registering route: %s %s\n", protocol, routePath)
-            r.Handle(protocol, routePath, handler)
+            log.Printf("Registering route: %s %s with middlewares\n", protocol, routePath)
+            
+            // Créer un groupe de routes avec les middlewares spécifiques
+            routeGroup := r.Group(routePath, middlewares...)
+            routeGroup.Handle(protocol, "", handler)
         }
     }
     return nil
+}
+
+func loadMiddlewares(middlewareFolder string) ([]gin.HandlerFunc, error) {
+    middlewares := []gin.HandlerFunc{}
+
+    basePath, err := getBasePath(middlewareFolder)
+    if err != nil {
+        return nil, fmt.Errorf("failed to get middleware folder: %v", err)
+    }
+
+    err = filepath.Walk(basePath, func(path string, info os.FileInfo, err error) error {
+        if err != nil {
+            return fmt.Errorf("error walking middleware folder: %v", err)
+        }
+
+        if shouldSkipFile(info) {
+            return nil
+        }
+
+        compiledMiddleware, err := compilePlugin(path)
+        if err != nil {
+            return fmt.Errorf("failed to compile middleware %s: %v", path, err)
+        }
+
+        for _, handler := range compiledMiddleware {
+            if mw, ok := handler.(func(*gin.Context)); ok {
+                middlewares = append(middlewares, mw)
+            }
+        }
+
+        return nil
+    })
+
+    if err != nil {
+        return nil, err
+    }
+
+    return middlewares, nil
 }
